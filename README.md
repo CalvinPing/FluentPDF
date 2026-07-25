@@ -2,6 +2,8 @@
 
 A fast, private, all-in-one PDF toolkit that runs entirely in your browser. No uploads, no accounts, no server ever touching your files — merge, split, edit, fill, and lock PDFs with everything happening on your own device.
 
+**Live site:** https://fluent-pdf.vercel.app
+
 ## Why
 
 Most online PDF tools work the same way: upload your file, a server processes it, you download the result. That's a strange default for documents that are often a lease, an ID, or a signed contract — exactly the files people are least eager to hand to a server they can't see.
