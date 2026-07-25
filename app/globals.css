@@ -1,0 +1,212 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #fbf9f6;
+  --background-elevated: #ffffff;
+  --background-secondary: #f3efe8;
+  --foreground: #1c1710;
+  --foreground-muted: #6b6152;
+  --foreground-subtle: #a89a80;
+
+  --primary: #b8622a;
+  --primary-hover: #9c5220;
+  --on-primary: #fff8f0;
+  --secondary: #8a6a4f;
+  --accent: #b8622a;
+
+  --muted: #efe9df;
+  --border: #e3dbcb;
+  --border-strong: #cbbfa8;
+
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --success: #059669;
+  --ring: #b8622a;
+
+  --shadow-color: 28 30% 12%;
+
+  /* Rendered PDF pages are always white paper, regardless of app theme — text drawn on top of
+     them (field previews) needs a fixed dark ink color that never flips to near-white in dark
+     mode the way --foreground does, and the page background itself needs to stay paper-white
+     rather than flipping to --background-elevated in dark mode. */
+  --pdf-paper: #ffffff;
+  --pdf-ink: #23190f;
+  --pdf-ink-subtle: #a89a80;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 150ms;
+  --duration-base: 220ms;
+  --duration-slow: 400ms;
+}
+
+.dark {
+  --background: #14110d;
+  --background-elevated: #1c170f;
+  --background-secondary: #1a150e;
+  --foreground: #f2ead8;
+  --foreground-muted: #a89a80;
+  --foreground-subtle: #6f6552;
+
+  --primary: #d1802f;
+  --primary-hover: #e89a52;
+  --on-primary: #1a0f04;
+  --secondary: #a08a6c;
+  --accent: #d1802f;
+
+  --muted: #221b12;
+  --border: rgba(244, 228, 200, 0.1);
+  --border-strong: rgba(244, 228, 200, 0.2);
+
+  --destructive: #f87171;
+  --destructive-foreground: #1a0505;
+  --success: #34d399;
+  --ring: #d1802f;
+
+  --shadow-color: 0 0% 2%;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-background-elevated: var(--background-elevated);
+  --color-background-secondary: var(--background-secondary);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+  --color-pdf-paper: var(--pdf-paper);
+  --color-pdf-ink: var(--pdf-ink);
+  --color-pdf-ink-subtle: var(--pdf-ink-subtle);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-plex-mono);
+
+  --animate-fade-in: fade-in var(--duration-base) var(--ease-out) forwards;
+  --animate-fade-up: fade-up var(--duration-slow) var(--ease-out-expo) forwards;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  ::selection {
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.zoom-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--color-border-strong);
+  outline: none;
+}
+.zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--color-primary);
+  cursor: pointer;
+  border: 2px solid var(--color-background);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.zoom-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--color-primary);
+  cursor: pointer;
+  border: 2px solid var(--color-background);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.zoom-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--color-border-strong);
+}
