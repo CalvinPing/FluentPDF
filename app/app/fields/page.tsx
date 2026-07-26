@@ -70,6 +70,7 @@ export default function FieldsPage() {
   const [baseHeight, setBaseHeight] = useState(DEFAULT_BASE_HEIGHT);
   const [past, setPast] = useState<EditableField[][]>([]);
   const [future, setFuture] = useState<EditableField[][]>([]);
+  const [clipboardField, setClipboardField] = useState<EditableField | null>(null);
   const [shellHeight, setShellHeight] = useState<number | null>(null);
   const lastCommitRef = useRef(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -148,23 +149,79 @@ export default function FieldsPage() {
     });
   }, [fields]);
 
+  // Builds a fresh "new" field from any source (detected or new) for copy/paste/duplicate —
+  // nudged slightly down-right so the clone never lands exactly on top of its source, and
+  // clamped so it can't be nudged off the edge of the page.
+  const cloneFieldAsNew = useCallback(
+    (source: EditableField): EditableField => {
+      const newCount = fields.filter((f) => f.origin === "new").length;
+      const offset = 0.02;
+      return {
+        ...source,
+        id: `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        origin: "new",
+        name: `${source.kind}_${newCount + 1}`,
+        xRatio: Math.min(1 - source.widthRatio, source.xRatio + offset),
+        yRatio: Math.min(1 - source.heightRatio, source.yRatio + offset),
+        autoDetected: false,
+      };
+    },
+    [fields],
+  );
+
+  const pasteField = useCallback(() => {
+    if (!clipboardField || isEncrypted !== false) return;
+    const newField = cloneFieldAsNew(clipboardField);
+    commit(fields, true);
+    setFields((prev) => [...prev, newField]);
+    setSelectedFieldId(newField.id);
+  }, [clipboardField, cloneFieldAsNew, fields, isEncrypted]);
+
+  const duplicateField = useCallback(
+    (id: string) => {
+      if (isEncrypted !== false) return;
+      const source = fields.find((f) => f.id === id);
+      if (!source) return;
+      const newField = cloneFieldAsNew(source);
+      commit(fields, true);
+      setFields((prev) => [...prev, newField]);
+      setSelectedFieldId(newField.id);
+    },
+    [fields, cloneFieldAsNew, isEncrypted],
+  );
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const isEditable = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
       if (isEditable) return;
       if (!(e.ctrlKey || e.metaKey)) return;
-      if (e.key.toLowerCase() === "z" && !e.shiftKey) {
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) {
         e.preventDefault();
         undo();
-      } else if (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey)) {
+      } else if (key === "y" || (key === "z" && e.shiftKey)) {
         e.preventDefault();
         redo();
+      } else if (key === "c") {
+        if (!selectedFieldId) return;
+        const field = fields.find((f) => f.id === selectedFieldId);
+        if (!field) return;
+        e.preventDefault();
+        setClipboardField(field);
+      } else if (key === "v") {
+        if (!clipboardField) return;
+        e.preventDefault();
+        pasteField();
+      } else if (key === "d") {
+        if (!selectedFieldId) return;
+        e.preventDefault();
+        duplicateField(selectedFieldId);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [undo, redo]);
+  }, [undo, redo, selectedFieldId, fields, clipboardField, pasteField, duplicateField]);
 
   useEffect(() => {
     const el = wrapperRef.current;
@@ -371,162 +428,168 @@ export default function FieldsPage() {
       {!bytes && <Dropzone onFiles={onFiles} label="Drop a PDF here, or click to browse" />}
 
       {bytes && (pageCount > 0 || isEncrypted === true) && (
-        <div
-          ref={shellRef}
-          className="flex flex-col overflow-hidden"
-          style={{ height: shellHeight ?? undefined }}
-        >
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-            <LoadedFileBar
-              name={name ?? "document.pdf"}
-              detail={pageCount > 0 ? pluralize(pageCount, "page") : undefined}
-              onChangeFile={changeFile}
-            />
+        // Breaks out of the shared tool-shell's max-w-6xl container to use the full viewport
+        // width instead — this tool is a canvas-heavy editor that benefits from real estate the
+        // other (form-centric) tools don't need, so only this page opts out of the shared cap.
+        <div className="relative left-1/2 right-1/2 w-screen -mx-[50vw] px-4 sm:px-6 lg:px-8">
+          <div
+            ref={shellRef}
+            className="mx-auto flex w-full max-w-[1800px] flex-col overflow-hidden"
+            style={{ height: shellHeight ?? undefined }}
+          >
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+              <LoadedFileBar
+                name={name ?? "document.pdf"}
+                detail={pageCount > 0 ? pluralize(pageCount, "page") : undefined}
+                onChangeFile={changeFile}
+              />
 
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={runSmartDetect} disabled={detecting || isEncrypted !== false} size="sm">
-                {detecting ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-                {detecting ? "Scanning…" : "Smart detect"}
-              </Button>
-              <Button onClick={handleSave} disabled={saving || fields.length === 0 || isEncrypted !== false} size="sm">
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <ListChecks size={15} />}
-                {saving ? "Saving…" : "Save PDF"}
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-3 flex shrink-0 flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-1 rounded-lg border border-border bg-background-secondary p-1">
-              <button
-                type="button"
-                onClick={undo}
-                disabled={past.length === 0}
-                aria-label="Undo"
-                title="Undo (Ctrl+Z)"
-                className="rounded-md p-1.5 text-foreground-muted hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
-              >
-                <Undo2 size={15} />
-              </button>
-              <button
-                type="button"
-                onClick={redo}
-                disabled={future.length === 0}
-                aria-label="Redo"
-                title="Redo (Ctrl+Shift+Z)"
-                className="rounded-md p-1.5 text-foreground-muted hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
-              >
-                <Redo2 size={15} />
-              </button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={runSmartDetect} disabled={detecting || isEncrypted !== false} size="sm">
+                  {detecting ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+                  {detecting ? "Scanning…" : "Smart detect"}
+                </Button>
+                <Button onClick={handleSave} disabled={saving || fields.length === 0 || isEncrypted !== false} size="sm">
+                  {saving ? <Loader2 size={15} className="animate-spin" /> : <ListChecks size={15} />}
+                  {saving ? "Saving…" : "Save PDF"}
+                </Button>
+              </div>
             </div>
 
-            <ZoomControls
-              zoom={zoom}
-              min={ZOOM_MIN}
-              max={ZOOM_MAX}
-              step={ZOOM_STEP}
-              onZoomChange={setZoom}
-              onFitWidth={fitToWidth}
-              onFitHeight={fitToHeight}
-            />
-          </div>
-
-          {placingType && (
-            <p className="mt-2 shrink-0 text-xs text-foreground-subtle">
-              {`Click and drag on any page to place a ${placingType} field. Right-click drag to pan.`}
-            </p>
-          )}
-
-          <div className="mt-3 flex min-h-0 flex-1 flex-col items-stretch gap-4 lg:flex-row">
-            <div className="w-full shrink-0 lg:h-full lg:w-24 lg:overflow-y-auto">
-              <FieldPalette active={placingType} onSelect={setPlacingType} disabled={isEncrypted !== false} />
-            </div>
-
-            <div className="relative min-w-0 flex-1 lg:h-full">
-              <div
-                ref={wrapperRef}
-                data-scroll-container
-                // overflow-y is always "scroll" (not "auto") so the scrollbar's width is reserved
-                // whether or not it's needed — otherwise, right at the zoom level where a page's
-                // height crosses the "needs scroll" threshold, the scrollbar toggling on/off
-                // changes this element's own measured width (picked up by the ResizeObserver
-                // below), which recomputes the zoomed page width, which can toggle the scrollbar
-                // back — an infinite layout feedback loop that keeps the canvas re-rendering and
-                // never lets its fade-in finish.
-                className={`max-h-[65vh] w-full overflow-x-auto overflow-y-scroll rounded-xl border border-border bg-background-secondary/40 p-4 transition-[filter,opacity] duration-200 lg:h-full lg:max-h-none ${
-                  isEncrypted === true ? "pointer-events-none opacity-50 grayscale" : ""
-                }`}
-              >
-                <div className="flex flex-col gap-8">
-                  {Array.from({ length: pageCount }, (_, i) => (
-                    <div key={i} id={`field-page-${i}`}>
-                      <FieldPageCanvas
-                        pdf={pdf}
-                        pageNumber={i + 1}
-                        pageIndex={i}
-                        width={pageWidth}
-                        fields={fields.filter((f) => f.pageIndex === i)}
-                        selectedFieldId={selectedFieldId}
-                        placingType={placingType}
-                        onSelectField={setSelectedFieldId}
-                        onDeselect={() => setSelectedFieldId(null)}
-                        onUpdateField={updateField}
-                        onCreateField={onCreateField}
-                      />
-                    </div>
-                  ))}
-                </div>
+            <div className="mt-3 flex shrink-0 flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-1 rounded-lg border border-border bg-background-secondary p-1">
+                <button
+                  type="button"
+                  onClick={undo}
+                  disabled={past.length === 0}
+                  aria-label="Undo"
+                  title="Undo (Ctrl+Z)"
+                  className="rounded-md p-1.5 text-foreground-muted hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                >
+                  <Undo2 size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={redo}
+                  disabled={future.length === 0}
+                  aria-label="Redo"
+                  title="Redo (Ctrl+Shift+Z)"
+                  className="rounded-md p-1.5 text-foreground-muted hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                >
+                  <Redo2 size={15} />
+                </button>
               </div>
 
-              {isEncrypted === true && (
-                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 p-6 text-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-background text-destructive shadow-sm ring-1 ring-border">
-                    <Lock size={20} />
-                  </div>
-                  <div className="max-w-xs rounded-xl border border-border bg-background px-5 py-4 shadow-lg">
-                    <p className="font-medium text-foreground">This PDF is password-protected</p>
-                    <p className="mt-1 text-sm text-foreground-muted">
-                      Fields can&apos;t be detected or added to an encrypted PDF. Remove its
-                      password/security in a tool like Adobe Acrobat, then re-upload.
-                    </p>
-                  </div>
-                </div>
-              )}
+              <ZoomControls
+                zoom={zoom}
+                min={ZOOM_MIN}
+                max={ZOOM_MAX}
+                step={ZOOM_STEP}
+                onZoomChange={setZoom}
+                onFitWidth={fitToWidth}
+                onFitHeight={fitToHeight}
+              />
             </div>
 
-            <div className="w-full shrink-0 lg:h-full lg:w-52 lg:overflow-y-auto">
-              <AnimatePresence mode="wait">
-                {selectedField ? (
-                  <motion.div
-                    key={selectedField.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-                  >
-                    <FieldDetailsPanel
-                      field={selectedField}
-                      onChange={updateField}
-                      onRemove={selectedField.origin === "new" ? removeField : undefined}
-                      onClose={() => setSelectedFieldId(null)}
-                    />
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="nav"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-                  >
-                    <FieldPageNav
-                      pdf={pdf}
-                      pageCount={pageCount}
-                      fieldCountByPage={fieldCountByPage}
-                      onJumpToPage={onJumpToPage}
-                    />
-                  </motion.div>
+            {placingType && (
+              <p className="mt-2 shrink-0 text-xs text-foreground-subtle">
+                {`Click and drag on any page to place a ${placingType} field. Right-click drag to pan.`}
+              </p>
+            )}
+
+            <div className="mt-3 flex min-h-0 flex-1 flex-col items-stretch gap-4 lg:flex-row">
+              <div className="w-full shrink-0 lg:h-full lg:w-24 lg:overflow-y-auto">
+                <FieldPalette active={placingType} onSelect={setPlacingType} disabled={isEncrypted !== false} />
+              </div>
+
+              <div className="relative min-w-0 flex-1 lg:h-full">
+                <div
+                  ref={wrapperRef}
+                  data-scroll-container
+                  // overflow-y is always "scroll" (not "auto") so the scrollbar's width is reserved
+                  // whether or not it's needed — otherwise, right at the zoom level where a page's
+                  // height crosses the "needs scroll" threshold, the scrollbar toggling on/off
+                  // changes this element's own measured width (picked up by the ResizeObserver
+                  // below), which recomputes the zoomed page width, which can toggle the scrollbar
+                  // back — an infinite layout feedback loop that keeps the canvas re-rendering and
+                  // never lets its fade-in finish.
+                  className={`max-h-[65vh] w-full overflow-x-auto overflow-y-scroll rounded-xl border border-border bg-background-secondary/40 p-4 transition-[filter,opacity] duration-200 lg:h-full lg:max-h-none ${
+                    isEncrypted === true ? "pointer-events-none opacity-50 grayscale" : ""
+                  }`}
+                >
+                  <div className="flex flex-col gap-8">
+                    {Array.from({ length: pageCount }, (_, i) => (
+                      <div key={i} id={`field-page-${i}`}>
+                        <FieldPageCanvas
+                          pdf={pdf}
+                          pageNumber={i + 1}
+                          pageIndex={i}
+                          width={pageWidth}
+                          fields={fields.filter((f) => f.pageIndex === i)}
+                          selectedFieldId={selectedFieldId}
+                          placingType={placingType}
+                          onSelectField={setSelectedFieldId}
+                          onDeselect={() => setSelectedFieldId(null)}
+                          onUpdateField={updateField}
+                          onCreateField={onCreateField}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {isEncrypted === true && (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 p-6 text-center">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-background text-destructive shadow-sm ring-1 ring-border">
+                      <Lock size={20} />
+                    </div>
+                    <div className="max-w-xs rounded-xl border border-border bg-background px-5 py-4 shadow-lg">
+                      <p className="font-medium text-foreground">This PDF is password-protected</p>
+                      <p className="mt-1 text-sm text-foreground-muted">
+                        Fields can&apos;t be detected or added to an encrypted PDF. Remove its
+                        password/security in a tool like Adobe Acrobat, then re-upload.
+                      </p>
+                    </div>
+                  </div>
                 )}
-              </AnimatePresence>
+              </div>
+
+              <div className="w-full shrink-0 lg:h-full lg:w-64 lg:overflow-y-auto">
+                <AnimatePresence mode="wait">
+                  {selectedField ? (
+                    <motion.div
+                      key={selectedField.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      <FieldDetailsPanel
+                        field={selectedField}
+                        onChange={updateField}
+                        onRemove={selectedField.origin === "new" ? removeField : undefined}
+                        onDuplicate={duplicateField}
+                        onClose={() => setSelectedFieldId(null)}
+                      />
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="nav"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      <FieldPageNav
+                        pdf={pdf}
+                        pageCount={pageCount}
+                        fieldCountByPage={fieldCountByPage}
+                        onJumpToPage={onJumpToPage}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           </div>
         </div>

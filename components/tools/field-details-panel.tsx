@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Type, SquareCheck, Calendar, Signature, List, CircleDot, FileQuestion, X, Trash2, ChevronDown } from "lucide-react";
+import { Type, SquareCheck, Calendar, Signature, List, CircleDot, FileQuestion, X, Trash2, Copy, ChevronDown } from "lucide-react";
 import {
   STANDARD_FONT_CHOICES,
   FONT_LABELS,
@@ -39,15 +39,65 @@ const kindLabel: Record<FieldKind, string> = {
   other: "Field",
 };
 
+const COLOR_PRESETS = ["#000000", "#ffffff", "#dc2626", "#ea580c", "#eab308", "#16a34a", "#2563eb", "#7c3aed"];
+
+/** A native color picker (for anything) paired with a row of one-click common presets. */
+function ColorField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-foreground-muted" htmlFor={id}>
+        {label}
+      </label>
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <input
+          id={id}
+          type="color"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-8 w-8 shrink-0 cursor-pointer rounded-lg border border-border-strong bg-background p-1"
+        />
+        <div className="flex flex-1 flex-wrap gap-1">
+          {COLOR_PRESETS.map((hex) => (
+            <button
+              key={hex}
+              type="button"
+              onClick={() => onChange(hex)}
+              aria-label={hex}
+              title={hex}
+              className={cn(
+                "h-6 w-6 shrink-0 rounded-md border transition-transform hover:scale-110",
+                value.toLowerCase() === hex ? "border-primary ring-2 ring-primary/40" : "border-border-strong",
+              )}
+              style={{ background: hex }}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function FieldDetailsPanel({
   field,
   onChange,
   onRemove,
+  onDuplicate,
   onClose,
 }: {
   field: EditableField;
   onChange: (id: string, patch: Partial<EditableField>) => void;
   onRemove?: (id: string) => void;
+  onDuplicate: (id: string) => void;
   onClose: () => void;
 }) {
   const [appearanceOpen, setAppearanceOpen] = useState(false);
@@ -290,31 +340,19 @@ export function FieldDetailsPanel({
 
           {appearanceOpen && (
             <div className="mt-4 flex flex-col gap-4">
-              <div>
-                <label className="text-xs font-medium text-foreground-muted" htmlFor="field-text-color">
-                  {isCheckbox || isRadio ? "Mark color" : "Text color"}
-                </label>
-                <input
-                  id="field-text-color"
-                  type="color"
-                  value={field.textColor ?? DEFAULT_TEXT_COLOR}
-                  onChange={(e) => onChange(field.id, { textColor: e.target.value, contentTouched: true })}
-                  className="mt-1.5 h-9 w-full cursor-pointer rounded-lg border border-border-strong bg-background p-1"
-                />
-              </div>
+              <ColorField
+                id="field-text-color"
+                label={isCheckbox || isRadio ? "Mark color" : "Text color"}
+                value={field.textColor ?? DEFAULT_TEXT_COLOR}
+                onChange={(hex) => onChange(field.id, { textColor: hex, contentTouched: true })}
+              />
 
-              <div>
-                <label className="text-xs font-medium text-foreground-muted" htmlFor="field-border-color">
-                  Border color
-                </label>
-                <input
-                  id="field-border-color"
-                  type="color"
-                  value={field.borderColor ?? DEFAULT_BORDER_COLOR}
-                  onChange={(e) => onChange(field.id, { borderColor: e.target.value, contentTouched: true })}
-                  className="mt-1.5 h-9 w-full cursor-pointer rounded-lg border border-border-strong bg-background p-1"
-                />
-              </div>
+              <ColorField
+                id="field-border-color"
+                label="Border color"
+                value={field.borderColor ?? DEFAULT_BORDER_COLOR}
+                onChange={(hex) => onChange(field.id, { borderColor: hex, contentTouched: true })}
+              />
 
               <div>
                 <label className="text-xs font-medium text-foreground-muted" htmlFor="field-border-width">
@@ -353,12 +391,14 @@ export function FieldDetailsPanel({
                   Fill background
                 </label>
                 {field.backgroundColor != null && (
-                  <input
-                    type="color"
-                    value={field.backgroundColor}
-                    onChange={(e) => onChange(field.id, { backgroundColor: e.target.value, contentTouched: true })}
-                    className="mt-1.5 h-9 w-full cursor-pointer rounded-lg border border-border-strong bg-background p-1"
-                  />
+                  <div className="mt-2">
+                    <ColorField
+                      id="field-background-color"
+                      label="Background color"
+                      value={field.backgroundColor}
+                      onChange={(hex) => onChange(field.id, { backgroundColor: hex, contentTouched: true })}
+                    />
+                  </div>
                 )}
               </div>
             </div>
@@ -366,16 +406,28 @@ export function FieldDetailsPanel({
         </div>
       )}
 
-      {onRemove && !isDetected && (
+      <div className="flex flex-col gap-2 border-t border-border pt-3">
         <button
           type="button"
-          onClick={() => onRemove(field.id)}
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10"
+          onClick={() => onDuplicate(field.id)}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border-strong px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
         >
-          <Trash2 size={15} />
-          Remove field
+          <Copy size={15} />
+          Duplicate field
         </button>
-      )}
+        <p className="text-center text-xs text-foreground-subtle">Ctrl+D to duplicate, Ctrl+C / Ctrl+V to copy across pages</p>
+
+        {onRemove && !isDetected && (
+          <button
+            type="button"
+            onClick={() => onRemove(field.id)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 size={15} />
+            Remove field
+          </button>
+        )}
+      </div>
     </div>
   );
 }

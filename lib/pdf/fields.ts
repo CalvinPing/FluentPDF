@@ -129,7 +129,7 @@ export interface EditableField {
 
 export const DEFAULT_TEXT_COLOR = "#000000";
 export const DEFAULT_BORDER_COLOR = "#000000";
-export const DEFAULT_BORDER_WIDTH = 2;
+export const DEFAULT_BORDER_WIDTH = 0;
 
 /** "MM/DD/YYYY" — the fixed max length a date field's text is capped to. */
 export const DATE_DISPLAY_LENGTH = 10;
