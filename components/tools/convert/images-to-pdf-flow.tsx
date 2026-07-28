@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Reorder } from "framer-motion";
-import { ImagePlus, Loader2 } from "lucide-react";
+import { Loader2, Repeat } from "lucide-react";
 import { Dropzone } from "@/components/ui/dropzone";
-import { ToolIntro } from "@/components/tool-shell/tool-intro";
 import { Button } from "@/components/ui/button";
 import { ImageFileRow, type ImageFile } from "@/components/tools/image-file-row";
 import type { ImageFormat } from "@/lib/pdf/images-to-pdf";
@@ -19,13 +18,13 @@ function formatOf(file: File): ImageFormat | null {
   return null;
 }
 
-export default function ImagesToPdfPage() {
+export function ImagesToPdfFlow() {
   const [files, setFiles] = useState<ImageFile[]>([]);
   const [building, setBuilding] = useState(false);
   const push = useToastStore((s) => s.push);
 
-  // Preview URLs are created per-file as they're added and must be revoked when the page
-  // unmounts, or the blobs leak for the life of the tab. Read through a ref (synced after every
+  // Preview URLs are created per-file as they're added and must be revoked when this flow is
+  // left, or the blobs leak for the life of the tab. Read through a ref (synced after every
   // render, never mutated during it) rather than closing over `files` directly, since a
   // mount-only effect would otherwise only ever see the empty array it started with.
   const filesRef = useRef<ImageFile[]>([]);
@@ -107,12 +106,6 @@ export default function ImagesToPdfPage() {
 
   return (
     <div>
-      <ToolIntro
-        icon={ImagePlus}
-        title="Images to PDF"
-        description="Turn PNG or JPEG photos into a PDF — one page per image, drag to reorder."
-      />
-
       <Dropzone
         multiple
         accept="image/png,image/jpeg"
@@ -138,7 +131,7 @@ export default function ImagesToPdfPage() {
 
           <div className="mt-8 flex justify-end">
             <Button onClick={handleBuild} disabled={building} size="lg">
-              {building ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={18} />}
+              {building ? <Loader2 size={18} className="animate-spin" /> : <Repeat size={18} />}
               {building ? "Building…" : `Create PDF from ${pluralize(files.length, "image")}`}
             </Button>
           </div>

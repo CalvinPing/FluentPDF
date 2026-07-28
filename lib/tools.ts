@@ -1,7 +1,7 @@
-import { Combine, Scissors, PenLine, ListChecks, Lock, ImagePlus, type LucideIcon } from "lucide-react";
+import { Combine, Scissors, PenLine, ListChecks, Lock, Repeat, type LucideIcon } from "lucide-react";
 
 export interface ToolMeta {
-  slug: "merge" | "split" | "edit" | "fields" | "protect" | "images";
+  slug: "merge" | "split" | "edit" | "fields" | "protect" | "convert";
   label: string;
   shortLabel: string;
   description: string;
@@ -45,10 +45,10 @@ export const tools: ToolMeta[] = [
     icon: Lock,
   },
   {
-    slug: "images",
-    label: "Images to PDF",
-    shortLabel: "Images",
-    description: "Turn PNG or JPEG photos into a PDF — one page per image, drag to reorder.",
-    icon: ImagePlus,
+    slug: "convert",
+    label: "Convert",
+    shortLabel: "Convert",
+    description: "Turn a PDF into JPG, Text, Word, Excel, or PowerPoint — or build one from HTML, Word, or images.",
+    icon: Repeat,
   },
 ];

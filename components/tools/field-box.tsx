@@ -9,12 +9,21 @@ import {
   type EditableField,
   type FieldKind,
 } from "@/lib/pdf/fields";
-import { moveRect, resizeRect, type HandlePosition } from "@/lib/pdf/field-geometry";
+import {
+  moveRect,
+  resizeRect,
+  snapMovedRect,
+  snapResizedRect,
+  type FieldRect,
+  type HandlePosition,
+  type SnapGuide,
+} from "@/lib/pdf/field-geometry";
 import { capturePointerDrag } from "@/lib/pointer-drag";
 import { cn } from "@/lib/cn";
 
 const MIN_PREVIEW_FONT_PX = 6;
 const MAX_PREVIEW_FONT_PX = 64;
+const SNAP_THRESHOLD_PX = 6;
 
 const placeholderLabel: Record<FieldKind, string> = {
   text: "Text",
@@ -26,7 +35,7 @@ const placeholderLabel: Record<FieldKind, string> = {
   other: "Field",
 };
 
-const HANDLES: { pos: HandlePosition; label: string; className: string; cursor: string }[] = [
+export const HANDLES: { pos: HandlePosition; label: string; className: string; cursor: string }[] = [
   { pos: "nw", label: "Resize from top-left", className: "-top-1 -left-1", cursor: "cursor-nwse-resize" },
   { pos: "n", label: "Resize from top", className: "-top-1 left-1/2 -translate-x-1/2", cursor: "cursor-ns-resize" },
   { pos: "ne", label: "Resize from top-right", className: "-top-1 -right-1", cursor: "cursor-nesw-resize" },
@@ -43,21 +52,64 @@ const MOVE_THRESHOLD_PX = 4;
 export function FieldBox({
   field,
   selected,
+  groupMode,
   containerRef,
   pxPerPt,
+  siblingRects,
   onSelect,
   onChange,
+  onSnapGuides,
+  onGroupMoveStep,
+  onGroupMoveEnd,
 }: {
   field: EditableField;
   selected: boolean;
+  /** True when this field is one of 2+ currently selected fields — dragging it then moves the
+   *  whole selection together instead of just this field, and its own resize handles are hidden
+   *  in favor of the shared group bounding box's handles. */
+  groupMode: boolean;
   containerRef: React.RefObject<HTMLDivElement | null>;
   pxPerPt: number | null;
+  /** Other fields on the same page, for snapping this one's edges/centers into alignment. */
+  siblingRects: FieldRect[];
   onSelect: (id: string) => void;
   onChange: (id: string, patch: Partial<EditableField>) => void;
+  onSnapGuides: (guides: SnapGuide[]) => void;
+  onGroupMoveStep: (dxRatio: number, dyRatio: number) => void;
+  onGroupMoveEnd: () => void;
 }) {
   const onBodyPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+
+    if (groupMode) {
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+      let moved = false;
+
+      capturePointerDrag(
+        e.currentTarget as HTMLElement,
+        e.pointerId,
+        (ev) => {
+          if (!containerRef.current) return;
+          const rect = containerRef.current.getBoundingClientRect();
+          const dxPx = ev.clientX - startClientX;
+          const dyPx = ev.clientY - startClientY;
+          if (!moved && Math.hypot(dxPx, dyPx) < MOVE_THRESHOLD_PX) return;
+          moved = true;
+          onGroupMoveStep(dxPx / rect.width, dyPx / rect.height);
+        },
+        () => {
+          onGroupMoveEnd();
+          // A plain click (no drag) on an already-grouped field narrows the selection down to
+          // just that field instead of moving the group — lets you jump straight from "the
+          // whole column" to "just this one" for precise editing without an extra deselect step.
+          if (!moved) onSelect(field.id);
+        },
+      );
+      return;
+    }
+
     onSelect(field.id);
 
     const startClientX = e.clientX;
@@ -70,15 +122,28 @@ export function FieldBox({
     };
     let moved = false;
 
-    capturePointerDrag(e.currentTarget as HTMLElement, e.pointerId, (ev) => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const dxPx = ev.clientX - startClientX;
-      const dyPx = ev.clientY - startClientY;
-      if (!moved && Math.hypot(dxPx, dyPx) < MOVE_THRESHOLD_PX) return;
-      moved = true;
-      onChange(field.id, moveRect(startRect, dxPx / rect.width, dyPx / rect.height));
-    });
+    capturePointerDrag(
+      e.currentTarget as HTMLElement,
+      e.pointerId,
+      (ev) => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const dxPx = ev.clientX - startClientX;
+        const dyPx = ev.clientY - startClientY;
+        if (!moved && Math.hypot(dxPx, dyPx) < MOVE_THRESHOLD_PX) return;
+        moved = true;
+        const movedRect = moveRect(startRect, dxPx / rect.width, dyPx / rect.height);
+        const { rect: snapped, guides } = snapMovedRect(
+          movedRect,
+          siblingRects,
+          SNAP_THRESHOLD_PX / rect.width,
+          SNAP_THRESHOLD_PX / rect.height,
+        );
+        onSnapGuides(guides);
+        onChange(field.id, snapped);
+      },
+      () => onSnapGuides([]),
+    );
   };
 
   const onHandlePointerDown = (handle: HandlePosition) => (e: React.PointerEvent) => {
@@ -95,13 +160,27 @@ export function FieldBox({
       heightRatio: field.heightRatio,
     };
 
-    capturePointerDrag(e.currentTarget as HTMLElement, e.pointerId, (ev) => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const dxRatio = (ev.clientX - startClientX) / rect.width;
-      const dyRatio = (ev.clientY - startClientY) / rect.height;
-      onChange(field.id, resizeRect(startRect, handle, dxRatio, dyRatio));
-    });
+    capturePointerDrag(
+      e.currentTarget as HTMLElement,
+      e.pointerId,
+      (ev) => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const dxRatio = (ev.clientX - startClientX) / rect.width;
+        const dyRatio = (ev.clientY - startClientY) / rect.height;
+        const resized = resizeRect(startRect, handle, dxRatio, dyRatio);
+        const { rect: snapped, guides } = snapResizedRect(
+          resized,
+          handle,
+          siblingRects,
+          SNAP_THRESHOLD_PX / rect.width,
+          SNAP_THRESHOLD_PX / rect.height,
+        );
+        onSnapGuides(guides);
+        onChange(field.id, snapped);
+      },
+      () => onSnapGuides([]),
+    );
   };
 
   const hasValue = field.value && field.value.trim().length > 0;
@@ -176,6 +255,7 @@ export function FieldBox({
         })()}
 
       {selected &&
+        !groupMode &&
         HANDLES.filter((h) => field.kind !== "checkbox" || CORNER_HANDLES.has(h.pos)).map((h) => (
           <div
             key={h.pos}

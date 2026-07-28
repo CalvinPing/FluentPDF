@@ -415,7 +415,9 @@ export function FieldDetailsPanel({
           <Copy size={15} />
           Duplicate field
         </button>
-        <p className="text-center text-xs text-foreground-subtle">Ctrl+D to duplicate, Ctrl+C / Ctrl+V to copy across pages</p>
+        <p className="text-center text-xs text-foreground-subtle">
+          Delete to remove, Ctrl+D to duplicate, Ctrl+C / Ctrl+V to copy across pages
+        </p>
 
         {onRemove && !isDetected && (
           <button

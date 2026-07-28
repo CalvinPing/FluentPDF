@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { ListChecks, Loader2, Lock, Redo2, Sparkles, Undo2 } from "lucide-react";
+import { Copy, ListChecks, Loader2, Lock, Redo2, Sparkles, Trash2, Undo2 } from "lucide-react";
 import { Dropzone } from "@/components/ui/dropzone";
 import { ToolIntro } from "@/components/tool-shell/tool-intro";
 import { Button } from "@/components/ui/button";
@@ -63,14 +62,14 @@ export default function FieldsPage() {
   const [fields, setFields] = useState<EditableField[]>([]);
   const [detecting, setDetecting] = useState(false);
   const [placingType, setPlacingType] = useState<NewFieldType | null>(null);
-  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+  const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [baseWidth, setBaseWidth] = useState(DEFAULT_BASE_WIDTH);
   const [baseHeight, setBaseHeight] = useState(DEFAULT_BASE_HEIGHT);
   const [past, setPast] = useState<EditableField[][]>([]);
   const [future, setFuture] = useState<EditableField[][]>([]);
-  const [clipboardField, setClipboardField] = useState<EditableField | null>(null);
+  const [clipboardFields, setClipboardFields] = useState<EditableField[]>([]);
   const [shellHeight, setShellHeight] = useState<number | null>(null);
   const lastCommitRef = useRef(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -82,7 +81,7 @@ export default function FieldsPage() {
     setBytes(null);
     setIsEncrypted(null);
     setFields([]);
-    setSelectedFieldId(null);
+    setSelectedFieldIds([]);
     setZoom(1);
     setPast([]);
     setFuture([]);
@@ -132,7 +131,7 @@ export default function FieldsPage() {
       if (p.length === 0) return p;
       setFuture((f) => [...f, fields]);
       setFields(p[p.length - 1]);
-      setSelectedFieldId(null);
+      setSelectedFieldIds([]);
       lastCommitRef.current = 0;
       return p.slice(0, -1);
     });
@@ -143,51 +142,62 @@ export default function FieldsPage() {
       if (f.length === 0) return f;
       setPast((p) => [...p, fields]);
       setFields(f[f.length - 1]);
-      setSelectedFieldId(null);
+      setSelectedFieldIds([]);
       lastCommitRef.current = 0;
       return f.slice(0, -1);
     });
   }, [fields]);
 
-  // Builds a fresh "new" field from any source (detected or new) for copy/paste/duplicate —
-  // nudged slightly down-right so the clone never lands exactly on top of its source, and
-  // clamped so it can't be nudged off the edge of the page.
-  const cloneFieldAsNew = useCallback(
-    (source: EditableField): EditableField => {
-      const newCount = fields.filter((f) => f.origin === "new").length;
+  // Builds fresh "new" fields from any source (detected or new) for copy/paste/duplicate —
+  // each nudged slightly down-right so a clone never lands exactly on top of its source, and
+  // clamped so it can't be nudged off the edge of the page. Naming continues the same running
+  // "new field" count `onCreateField` uses, computed once for the whole batch so cloning several
+  // fields at once doesn't give them all the same generated name.
+  const cloneFieldsAsNew = useCallback(
+    (sources: EditableField[]): EditableField[] => {
       const offset = 0.02;
-      return {
+      let nextIndex = fields.filter((f) => f.origin === "new").length + 1;
+      return sources.map((source) => ({
         ...source,
-        id: `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${nextIndex}`,
         origin: "new",
-        name: `${source.kind}_${newCount + 1}`,
+        name: `${source.kind}_${nextIndex++}`,
         xRatio: Math.min(1 - source.widthRatio, source.xRatio + offset),
         yRatio: Math.min(1 - source.heightRatio, source.yRatio + offset),
         autoDetected: false,
-      };
+      }));
     },
     [fields],
   );
 
-  const pasteField = useCallback(() => {
-    if (!clipboardField || isEncrypted !== false) return;
-    const newField = cloneFieldAsNew(clipboardField);
+  const pasteFields = useCallback(() => {
+    if (clipboardFields.length === 0 || isEncrypted !== false) return;
+    const newFields = cloneFieldsAsNew(clipboardFields);
     commit(fields, true);
-    setFields((prev) => [...prev, newField]);
-    setSelectedFieldId(newField.id);
-  }, [clipboardField, cloneFieldAsNew, fields, isEncrypted]);
+    setFields((prev) => [...prev, ...newFields]);
+    setSelectedFieldIds(newFields.map((f) => f.id));
+  }, [clipboardFields, cloneFieldsAsNew, fields, isEncrypted]);
 
-  const duplicateField = useCallback(
-    (id: string) => {
+  const duplicateFields = useCallback(
+    (ids: string[]) => {
       if (isEncrypted !== false) return;
-      const source = fields.find((f) => f.id === id);
-      if (!source) return;
-      const newField = cloneFieldAsNew(source);
+      const sources = fields.filter((f) => ids.includes(f.id));
+      if (sources.length === 0) return;
+      const newFields = cloneFieldsAsNew(sources);
       commit(fields, true);
-      setFields((prev) => [...prev, newField]);
-      setSelectedFieldId(newField.id);
+      setFields((prev) => [...prev, ...newFields]);
+      setSelectedFieldIds(newFields.map((f) => f.id));
     },
-    [fields, cloneFieldAsNew, isEncrypted],
+    [fields, cloneFieldsAsNew, isEncrypted],
+  );
+
+  const removeFields = useCallback(
+    (ids: string[]) => {
+      commit(fields, true);
+      setFields((prev) => prev.filter((f) => !ids.includes(f.id)));
+      setSelectedFieldIds((prev) => prev.filter((id) => !ids.includes(id)));
+    },
+    [fields],
   );
 
   useEffect(() => {
@@ -195,6 +205,17 @@ export default function FieldsPage() {
       const target = e.target as HTMLElement | null;
       const isEditable = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
       if (isEditable) return;
+
+      if ((e.key === "Delete" || e.key === "Backspace") && !e.ctrlKey && !e.metaKey) {
+        const removableIds = fields
+          .filter((f) => selectedFieldIds.includes(f.id) && f.origin === "new")
+          .map((f) => f.id);
+        if (removableIds.length === 0) return;
+        e.preventDefault();
+        removeFields(removableIds);
+        return;
+      }
+
       if (!(e.ctrlKey || e.metaKey)) return;
       const key = e.key.toLowerCase();
       if (key === "z" && !e.shiftKey) {
@@ -204,24 +225,23 @@ export default function FieldsPage() {
         e.preventDefault();
         redo();
       } else if (key === "c") {
-        if (!selectedFieldId) return;
-        const field = fields.find((f) => f.id === selectedFieldId);
-        if (!field) return;
+        const selected = fields.filter((f) => selectedFieldIds.includes(f.id));
+        if (selected.length === 0) return;
         e.preventDefault();
-        setClipboardField(field);
+        setClipboardFields(selected);
       } else if (key === "v") {
-        if (!clipboardField) return;
+        if (clipboardFields.length === 0) return;
         e.preventDefault();
-        pasteField();
+        pasteFields();
       } else if (key === "d") {
-        if (!selectedFieldId) return;
+        if (selectedFieldIds.length === 0) return;
         e.preventDefault();
-        duplicateField(selectedFieldId);
+        duplicateFields(selectedFieldIds);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [undo, redo, selectedFieldId, fields, clipboardField, pasteField, duplicateField]);
+  }, [undo, redo, selectedFieldIds, fields, clipboardFields, pasteFields, duplicateFields, removeFields]);
 
   useEffect(() => {
     const el = wrapperRef.current;
@@ -259,7 +279,7 @@ export default function FieldsPage() {
     setBytes(fileBytes);
     setIsEncrypted(null);
     setFields([]);
-    setSelectedFieldId(null);
+    setSelectedFieldIds([]);
     setZoom(1);
     setPast([]);
     setFuture([]);
@@ -365,7 +385,7 @@ export default function FieldsPage() {
     };
     commit(fields, true);
     setFields((prev) => [...prev, field]);
-    setSelectedFieldId(field.id);
+    setSelectedFieldIds([field.id]);
   };
 
   const updateField = (id: string, patch: Partial<EditableField>) => {
@@ -373,12 +393,6 @@ export default function FieldsPage() {
     // Any manual touch — drag, resize, or a details-panel edit — "promotes" a suggested field
     // to a normal one, so the next Smart Detect run leaves it alone instead of replacing it.
     setFields((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch, autoDetected: false } : f)));
-  };
-
-  const removeField = (id: string) => {
-    commit(fields, true);
-    setFields((prev) => prev.filter((f) => f.id !== id));
-    setSelectedFieldId((prev) => (prev === id ? null : prev));
   };
 
   const handleSave = async () => {
@@ -410,7 +424,9 @@ export default function FieldsPage() {
     document.getElementById(`field-page-${pageIndex}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const selectedField = fields.find((f) => f.id === selectedFieldId) ?? null;
+  const selectedFields = fields.filter((f) => selectedFieldIds.includes(f.id));
+  const singleSelectedField = selectedFields.length === 1 ? selectedFields[0] : null;
+  const removableSelectedIds = selectedFields.filter((f) => f.origin === "new").map((f) => f.id);
   const pageWidth = Math.round(baseWidth * zoom);
   const fieldCountByPage = Array.from(
     { length: pageCount },
@@ -526,10 +542,10 @@ export default function FieldsPage() {
                           pageIndex={i}
                           width={pageWidth}
                           fields={fields.filter((f) => f.pageIndex === i)}
-                          selectedFieldId={selectedFieldId}
+                          selectedFieldIds={selectedFieldIds}
                           placingType={placingType}
-                          onSelectField={setSelectedFieldId}
-                          onDeselect={() => setSelectedFieldId(null)}
+                          onSelectFields={setSelectedFieldIds}
+                          onDeselect={() => setSelectedFieldIds([])}
                           onUpdateField={updateField}
                           onCreateField={onCreateField}
                         />
@@ -555,40 +571,52 @@ export default function FieldsPage() {
               </div>
 
               <div className="w-full shrink-0 lg:h-full lg:w-64 lg:overflow-y-auto">
-                <AnimatePresence mode="wait">
-                  {selectedField ? (
-                    <motion.div
-                      key={selectedField.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-                    >
-                      <FieldDetailsPanel
-                        field={selectedField}
-                        onChange={updateField}
-                        onRemove={selectedField.origin === "new" ? removeField : undefined}
-                        onDuplicate={duplicateField}
-                        onClose={() => setSelectedFieldId(null)}
-                      />
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="nav"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-                    >
-                      <FieldPageNav
-                        pdf={pdf}
-                        pageCount={pageCount}
-                        fieldCountByPage={fieldCountByPage}
-                        onJumpToPage={onJumpToPage}
-                      />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                {singleSelectedField ? (
+                  <FieldDetailsPanel
+                    key={singleSelectedField.id}
+                    field={singleSelectedField}
+                    onChange={updateField}
+                    onRemove={singleSelectedField.origin === "new" ? (id) => removeFields([id]) : undefined}
+                    onDuplicate={(id) => duplicateFields([id])}
+                    onClose={() => setSelectedFieldIds([])}
+                  />
+                ) : selectedFields.length > 1 ? (
+                  <div className="flex w-full flex-col gap-4 rounded-2xl border border-border bg-background-elevated p-4 shadow-xl shadow-black/10">
+                    <p className="text-sm font-semibold text-foreground">
+                      {pluralize(selectedFields.length, "field")} selected
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => duplicateFields(selectedFieldIds)}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border-strong px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
+                      >
+                        <Copy size={15} />
+                        Duplicate {pluralize(selectedFields.length, "field")}
+                      </button>
+                      {removableSelectedIds.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => removeFields(removableSelectedIds)}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 size={15} />
+                          Remove {pluralize(removableSelectedIds.length, "field")}
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-center text-xs text-foreground-subtle">
+                      Press Delete to remove, Ctrl+D to duplicate, Ctrl+C / Ctrl+V to copy across pages
+                    </p>
+                  </div>
+                ) : (
+                  <FieldPageNav
+                    pdf={pdf}
+                    pageCount={pageCount}
+                    fieldCountByPage={fieldCountByPage}
+                    onJumpToPage={onJumpToPage}
+                  />
+                )}
               </div>
             </div>
           </div>
