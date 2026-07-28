@@ -272,6 +272,7 @@ export async function applyFieldEdits(
     const y = ph - field.yRatio * ph - height;
 
     // Colors only apply at widget-creation time, so this is only meaningful for "new" fields.
+    const bw = field.borderWidth ?? 0;
     const appearance: {
       textColor?: Color;
       borderColor?: Color;
@@ -279,7 +280,13 @@ export async function applyFieldEdits(
       backgroundColor?: Color;
     } = {
       textColor: hexToColor(field.textColor),
-      borderColor: hexToColor(field.borderColor),
+      // Only set a border color when the border actually has width. pdf-lib writes any border
+      // color straight into the widget's /MK /BC entry, and several PDF viewers (Acrobat
+      // included) regenerate a field's fill/print appearance from that entry directly — drawing
+      // a visible hairline border whenever /MK /BC is present at all, even with a zero-width
+      // /BS. Omitting the color entirely (not just zeroing the width) is what actually
+      // guarantees no border shows up once the form is filled in and printed.
+      borderColor: bw > 0 ? hexToColor(field.borderColor) : undefined,
       borderWidth: field.borderWidth,
       backgroundColor: hexToColor(field.backgroundColor),
     };
@@ -291,7 +298,6 @@ export async function applyFieldEdits(
     // before creation, and the position nudged by half of it, or every "new" field would end up
     // `borderWidth` pt taller/wider (and slightly offset) than what was drawn — a couple points
     // is invisible on a big field, but very visible (overlapping neighbors) on a small one.
-    const bw = field.borderWidth ?? 0;
     const newFieldWidth = Math.max(0, width - bw);
     const newFieldHeight = Math.max(0, height - bw);
     const newFieldX = x + bw / 2;
