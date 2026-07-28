@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Scissors, Loader2, CheckSquare, Square, FileOutput, FolderOutput } from "lucide-react";
+import { Scissors, Loader2, CheckSquare, Square, FileOutput, FolderOutput, SplitSquareHorizontal, Layers } from "lucide-react";
 import { Dropzone } from "@/components/ui/dropzone";
 import { ToolIntro } from "@/components/tool-shell/tool-intro";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,8 @@ export default function SplitPage() {
   const [name, setName] = useState<string | null>(null);
   const [bytes, setBytes] = useState<Uint8Array | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [busy, setBusy] = useState<"extract" | "split" | null>(null);
+  const [chunkSize, setChunkSize] = useState(5);
+  const [busy, setBusy] = useState<"extract" | "split" | "half" | "chunks" | null>(null);
   const push = useToastStore((s) => s.push);
 
   const changeFile = () => {
@@ -124,12 +125,57 @@ export default function SplitPage() {
     }
   };
 
+  const splitInHalf = async () => {
+    if (!bytes || pageCount < 2) return;
+    setBusy("half");
+    try {
+      const mid = Math.ceil(pageCount / 2);
+      const ranges = [
+        Array.from({ length: mid }, (_, i) => i),
+        Array.from({ length: pageCount - mid }, (_, i) => mid + i),
+      ];
+      const outputs = await getPdfWorker().splitPdf(bytes, ranges);
+      const base = stripExtension(name ?? "document");
+      const zipped = await zipFiles(outputs.map((out, i) => ({ name: `${base}-part-${i + 1}.pdf`, bytes: out })));
+      downloadBytes(zipped, `${base}-halves.zip`, "application/zip");
+      push("success", "Split into two halves.");
+    } catch {
+      push("error", "Couldn't split that file — please check it's a valid PDF.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const splitByChunkSize = async () => {
+    if (!bytes || pageCount === 0 || chunkSize < 1) return;
+    setBusy("chunks");
+    try {
+      const ranges: number[][] = [];
+      for (let i = 0; i < pageCount; i += chunkSize) {
+        ranges.push(Array.from({ length: Math.min(chunkSize, pageCount - i) }, (_, j) => i + j));
+      }
+      const outputs = await getPdfWorker().splitPdf(bytes, ranges);
+      const base = stripExtension(name ?? "document");
+      if (outputs.length === 1) {
+        downloadBytes(outputs[0], `${base}-part-1.pdf`);
+      } else {
+        const zipped = await zipFiles(outputs.map((out, i) => ({ name: `${base}-part-${i + 1}.pdf`, bytes: out })));
+        downloadBytes(zipped, `${base}-split.zip`, "application/zip");
+      }
+      push("success", `Split into ${pluralize(outputs.length, "file")}.`);
+    } catch {
+      push("error", "Couldn't split that file — please check it's a valid PDF.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div>
       <ToolIntro
         icon={Scissors}
         title="Split PDFs"
-        description="Pull specific pages out, or break the whole file into one PDF per page."
+        description="Pull specific pages out, split evenly by chunk size, split in half, or break the file into one PDF per page."
       />
 
       {!bytes && <Dropzone onFiles={onFiles} label="Drop a PDF here, or click to browse" />}
@@ -177,7 +223,30 @@ export default function SplitPage() {
             ))}
           </div>
 
-          <div className="mt-8 flex flex-col-reverse justify-end gap-3 sm:flex-row">
+          <div className="mt-8 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-background-secondary/40 p-3">
+            <p className="text-xs font-medium text-foreground-muted">Quick split:</p>
+            <Button variant="outline" size="sm" onClick={splitInHalf} disabled={busy !== null || pageCount < 2}>
+              {busy === "half" ? <Loader2 size={14} className="animate-spin" /> : <SplitSquareHorizontal size={14} />}
+              Split in half
+            </Button>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={1}
+                max={pageCount}
+                value={chunkSize}
+                onChange={(e) => setChunkSize(Math.min(pageCount, Math.max(1, Number(e.target.value) || 1)))}
+                aria-label="Pages per file"
+                className="w-16 rounded-lg border border-border-strong bg-background px-2 py-1.5 text-sm text-foreground outline-none focus-visible:border-primary"
+              />
+              <Button variant="outline" size="sm" onClick={splitByChunkSize} disabled={busy !== null || chunkSize < 1}>
+                {busy === "chunks" ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
+                pages per file
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col-reverse justify-end gap-3 sm:flex-row">
             <Button variant="outline" onClick={splitEveryPage} disabled={busy !== null} size="lg">
               {busy === "split" ? <Loader2 size={18} className="animate-spin" /> : <FolderOutput size={18} />}
               {busy === "split" ? "Splitting…" : "Split every page"}

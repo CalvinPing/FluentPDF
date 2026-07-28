@@ -390,3 +390,13 @@ export async function applyFieldEdits(
 
   return doc.save();
 }
+
+/** Bakes every form field's current value into the page content as static marks, then removes
+ * the (now-redundant) interactive fields — the standard "finalize this form so it can't be
+ * edited further" operation. */
+export async function flattenForm(bytes: Uint8Array): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  if (doc.isEncrypted) throw new EncryptedPdfError();
+  doc.getForm().flatten();
+  return doc.save();
+}

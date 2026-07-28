@@ -1,7 +1,7 @@
-import { Combine, Scissors, PenLine, ListChecks, Lock, Repeat, type LucideIcon } from "lucide-react";
+import { Combine, Scissors, PenLine, ListChecks, Lock, Repeat, Stamp, LayoutGrid, type LucideIcon } from "lucide-react";
 
 export interface ToolMeta {
-  slug: "merge" | "split" | "edit" | "fields" | "protect" | "convert";
+  slug: "merge" | "split" | "edit" | "fields" | "stamp" | "layout" | "protect" | "convert";
   label: string;
   shortLabel: string;
   description: string;
@@ -11,31 +11,45 @@ export interface ToolMeta {
 export const tools: ToolMeta[] = [
   {
     slug: "merge",
-    label: "Merge PDFs",
+    label: "Merge & Mix",
     shortLabel: "Merge",
-    description: "Combine multiple PDFs into a single document, in whatever order you choose.",
+    description: "Combine PDFs in order, or alternate pages between two files — like interleaving front/back scans.",
     icon: Combine,
   },
   {
     slug: "split",
     label: "Split PDFs",
     shortLabel: "Split",
-    description: "Pull specific pages out, or break one PDF into several smaller files.",
+    description: "Pull specific pages out, break a file into even chunks, split it in half, or one PDF per page.",
     icon: Scissors,
   },
   {
     slug: "edit",
     label: "Edit Pages",
     shortLabel: "Edit",
-    description: "Rotate, delete, and reorder pages, or drop in new text anywhere.",
+    description: "Rotate, delete, and reorder pages, drop in new text, or update the document's title and author.",
     icon: PenLine,
   },
   {
     slug: "fields",
     label: "Form Fields",
     shortLabel: "Fields",
-    description: "Auto-detect fillable fields, or place your own — text, checkbox, date, signature.",
+    description: "Auto-detect fillable fields, place your own, or flatten a filled form into a static, non-editable PDF.",
     icon: ListChecks,
+  },
+  {
+    slug: "stamp",
+    label: "Stamp Pages",
+    shortLabel: "Stamp",
+    description: "Add a watermark, running header or footer, page numbers, or Bates numbering to every page.",
+    icon: Stamp,
+  },
+  {
+    slug: "layout",
+    label: "Page Layout",
+    shortLabel: "Layout",
+    description: "Crop the margins, change the page size, or combine several pages onto one sheet.",
+    icon: LayoutGrid,
   },
   {
     slug: "protect",

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Reorder } from "framer-motion";
-import { PenLine, Loader2, Type } from "lucide-react";
+import { PenLine, Loader2, Type, Info } from "lucide-react";
 import { Dropzone } from "@/components/ui/dropzone";
 import { ToolIntro } from "@/components/tool-shell/tool-intro";
 import { Button } from "@/components/ui/button";
@@ -10,14 +10,17 @@ import { PdfCanvas } from "@/components/pdf/pdf-canvas";
 import { EditPageRow, type EditPageState } from "@/components/tools/edit-page-row";
 import { AnnotationOverlay, type AnnotationDraft } from "@/components/tools/annotation-overlay";
 import { LoadedFileBar } from "@/components/tool-shell/loaded-file-bar";
+import { TextField } from "@/components/tools/form-fields";
 import { usePdfDocument } from "@/lib/hooks/use-pdf-document";
 import type { TextAnnotation } from "@/lib/pdf/edit";
+import type { PdfMetadata } from "@/lib/pdf/metadata";
 import { getPdfWorker } from "@/lib/workers/pdf-worker-client";
 import { downloadBytes, readFileAsBytes, stripExtension } from "@/lib/download";
 import { pluralize } from "@/lib/pluralize";
 import { useToastStore } from "@/lib/toast-store";
 
 const FONT_SIZE = 14;
+const EMPTY_METADATA: PdfMetadata = { title: "", author: "", subject: "", keywords: "" };
 
 export default function EditPage() {
   const [name, setName] = useState<string | null>(null);
@@ -25,6 +28,7 @@ export default function EditPage() {
   const [pages, setPages] = useState<EditPageState[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [annotations, setAnnotations] = useState<Record<string, AnnotationDraft[]>>({});
+  const [metadata, setMetadata] = useState<PdfMetadata>(EMPTY_METADATA);
   const [exporting, setExporting] = useState(false);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const [initSnapshot, setInitSnapshot] = useState<{ bytes: Uint8Array | null; pageCount: number }>({
@@ -37,6 +41,7 @@ export default function EditPage() {
     setName(null);
     setBytes(null);
     setAnnotations({});
+    setMetadata(EMPTY_METADATA);
   };
 
   const { pdf, pageCount } = usePdfDocument(bytes, changeFile);
@@ -46,6 +51,10 @@ export default function EditPage() {
     setName(file.name);
     setAnnotations({});
     setBytes(loaded);
+    getPdfWorker()
+      .getMetadata(loaded)
+      .then(setMetadata)
+      .catch(() => {});
   };
 
   // Re-initialize the editable page list whenever a new document loads or its page count
@@ -129,7 +138,8 @@ export default function EditPage() {
             fontSize: FONT_SIZE,
           })),
       );
-      const out = await getPdfWorker().applyPageEdits(bytes, order, textAnnotations);
+      const edited = await getPdfWorker().applyPageEdits(bytes, order, textAnnotations);
+      const out = await getPdfWorker().setMetadata(edited, metadata);
       downloadBytes(out, `${stripExtension(name ?? "document")}-edited.pdf`);
       push("success", "Edited PDF downloaded.");
     } catch {
@@ -172,6 +182,19 @@ export default function EditPage() {
               />
             ))}
           </Reorder.Group>
+
+          <div className="mt-8 rounded-xl border border-border bg-background-secondary/40 p-4">
+            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
+              <Info size={15} className="text-foreground-subtle" />
+              Document details
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <TextField id="meta-title" label="Title" value={metadata.title} onChange={(v) => setMetadata((m) => ({ ...m, title: v }))} placeholder="Untitled" />
+              <TextField id="meta-author" label="Author" value={metadata.author} onChange={(v) => setMetadata((m) => ({ ...m, author: v }))} placeholder="Unknown" />
+              <TextField id="meta-subject" label="Subject" value={metadata.subject} onChange={(v) => setMetadata((m) => ({ ...m, subject: v }))} placeholder="Optional" />
+              <TextField id="meta-keywords" label="Keywords" value={metadata.keywords} onChange={(v) => setMetadata((m) => ({ ...m, keywords: v }))} placeholder="Comma-separated" />
+            </div>
+          </div>
 
           {selectedPage && (
             <div className="mt-8">

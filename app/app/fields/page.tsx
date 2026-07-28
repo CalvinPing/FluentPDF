@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Copy, ListChecks, Loader2, Lock, Redo2, Sparkles, Trash2, Undo2 } from "lucide-react";
+import { Copy, Layers, ListChecks, Loader2, Lock, Redo2, Sparkles, Trash2, Undo2 } from "lucide-react";
 import { Dropzone } from "@/components/ui/dropzone";
 import { ToolIntro } from "@/components/tool-shell/tool-intro";
 import { Button } from "@/components/ui/button";
@@ -64,6 +64,7 @@ export default function FieldsPage() {
   const [placingType, setPlacingType] = useState<NewFieldType | null>(null);
   const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [flattening, setFlattening] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [baseWidth, setBaseWidth] = useState(DEFAULT_BASE_WIDTH);
   const [baseHeight, setBaseHeight] = useState(DEFAULT_BASE_HEIGHT);
@@ -420,6 +421,28 @@ export default function FieldsPage() {
     }
   };
 
+  const handleFlatten = async () => {
+    if (!bytes || fields.length === 0) {
+      push("error", "Detect or place at least one field first.");
+      return;
+    }
+    setFlattening(true);
+    try {
+      const out = await getPdfWorker().flattenForm(bytes);
+      downloadBytes(out, `${stripExtension(name ?? "document")}-flattened.pdf`);
+      push("success", "Flattened PDF downloaded.");
+    } catch (err) {
+      push(
+        "error",
+        err instanceof Error && err.name === "EncryptedPdfError"
+          ? "This PDF is password-protected, so it can't be flattened. Remove the password/security first, then re-upload."
+          : "Couldn't flatten that PDF — please check the file.",
+      );
+    } finally {
+      setFlattening(false);
+    }
+  };
+
   const onJumpToPage = (pageIndex: number) => {
     document.getElementById(`field-page-${pageIndex}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -464,6 +487,16 @@ export default function FieldsPage() {
                 <Button variant="outline" onClick={runSmartDetect} disabled={detecting || isEncrypted !== false} size="sm">
                   {detecting ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
                   {detecting ? "Scanning…" : "Smart detect"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleFlatten}
+                  disabled={flattening || fields.length === 0 || isEncrypted !== false}
+                  size="sm"
+                  title="Bake field values into the page and remove the interactive fields"
+                >
+                  {flattening ? <Loader2 size={15} className="animate-spin" /> : <Layers size={15} />}
+                  {flattening ? "Flattening…" : "Flatten"}
                 </Button>
                 <Button onClick={handleSave} disabled={saving || fields.length === 0 || isEncrypted !== false} size="sm">
                   {saving ? <Loader2 size={15} className="animate-spin" /> : <ListChecks size={15} />}

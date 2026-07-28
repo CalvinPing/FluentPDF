@@ -15,7 +15,7 @@ export function FeatureGrid() {
           One workspace, every PDF task
         </h2>
         <p className="mt-4 text-lg text-foreground-muted">
-          Six focused tools that cover the vast majority of what people actually need to do
+          Eight focused tools that cover the vast majority of what people actually need to do
           with a PDF — no bloated feature list, no confusing menus.
         </p>
       </Reveal>
